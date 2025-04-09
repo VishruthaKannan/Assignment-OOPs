@@ -1,85 +1,79 @@
-from db.DatabaseConnector import DatabaseConnector
-from dao.CustomerDAO import CustomerDAO
-from dao.ProductDAO import ProductDAO
-from dao.OrderDAO import OrderDAO
-from entity.Customers import Customers
-from entity.Products import Products
-from entity.Orders import Orders
-from entity.OrderDetails import OrderDetails
-from entity.Inventory import Inventory
-from exception.CustomExceptions import InvalidDataException, InsufficientStockException, IncompleteOrderException
+from models.Customers import Customers
+from models.Products import Products
+from models.Orders import Orders
+from models.OrderDetails import OrderDetails
+from models.Inventory import Inventory
+from exceptions.CustomExceptions import (
+    InvalidDataException,
+    InsufficientStockException,
+    IncompleteOrderException,
+    PaymentFailedException
+)
+from collections import defaultdict
 import datetime
 
-def main():
-    print("=== Welcome to TechShop ===")
-    db_connector = DatabaseConnector()
-    conn = db_connector.open_connection()
+# Create products
+try:
+    product1 = Products(101, "Smartphone", "Android phone", 299.99)
+    product2 = Products(102, "Laptop", "Gaming laptop", 899.99)
+    product_list.extend([product1, product2])
 
-    customer_dao = CustomerDAO(db_connector)
-    product_dao = ProductDAO(db_connector)
-    order_dao = OrderDAO(db_connector)
+    # Add inventory
+    inventory[101] = Inventory(1, product1, 50, datetime.datetime.now())
+    inventory[102] = Inventory(2, product2, 30, datetime.datetime.now())
 
-    # --- Fetch and Display Customers ---
-    print("\n[Customers in DB]")
-    customers = customer_dao.get_all_customers()
-    for cust in customers:
-        print(f"{cust.customer_id} - {cust.first_name} {cust.last_name}")
+except InvalidDataException as e:
+    print(e)
 
-    # --- Fetch and Display Products ---
-    print("\n[Available Products]")
-    products = product_dao.get_all_products()
-    for prod in products:
-        print(f"{prod.product_id}: {prod.product_name} - ${prod.price}")
+# Place an order
+try:
+    # Check stock
+    if not inventory[101].IsProductAvailable(2):
+        raise InsufficientStockException("Not enough smartphones in stock.")
+    if not inventory[102].IsProductAvailable(1):
+        raise InsufficientStockException("Not enough laptops in stock.")
 
-    # --- Register New Customer (Example) ---
-    try:
-        print("\n[Registering New Customer]")
-        new_customer = Customers(0, "Alice", "Wonder", "alice@wonder.com", "1234567890", "Fantasy Lane")
-        customer_id = customer_dao.create_customer(new_customer)
-        print(f"New Customer Registered with ID: {customer_id}")
-    except InvalidDataException as e:
-        print("Error:", e)
+    # Create order
+    order = Orders(1001, customer1, datetime.datetime.now(), 0.0)
 
-    # --- Create New Product (Example) ---
-    try:
-        print("\n[Adding New Product]")
-        new_product = Products(0, "Wireless Earbuds", "Bluetooth 5.2, Noise Cancelling", 59.99)
-        product_id = product_dao.create_product(new_product)
-        print(f"New Product Added with ID: {product_id}")
-    except InvalidDataException as e:
-        print("Error:", e)
+    # Create order details
+    detail1 = OrderDetails(1, order, product1, 2)
+    detail2 = OrderDetails(2, order, product2, 1)
 
-    # --- Place an Order (Example) ---
-    try:
-        print("\n[Placing Order]")
-        customer = customers[0]
-        product = products[0]
-        quantity = 2
+    # Update inventory
+    inventory[101].RemoveFromInventory(2)
+    inventory[102].RemoveFromInventory(1)
 
-        if product_dao.get_product_stock(product.product_id) < quantity:
-            raise InsufficientStockException("Not enough stock to place order.")
+    # Calculate order total
+    order.total_amount = detail1.CalculateSubtotal() + detail2.CalculateSubtotal()
 
-        order = Orders(0, customer.customer_id, datetime.datetime.now(), 0)
-        order_id = order_dao.create_order(order)
+    print(f"Order placed! Order ID: {order.order_id}")
+    print(f"Customer: {order.customer.get_full_name()}")
+    print(f"Total Amount: ${order.total_amount}")
+    print(f"Order Status: {order.status}")
 
-        order_detail = OrderDetails(0, order_id, product.product_id, quantity)
-        subtotal = order_detail.calculate_subtotal(product.price)
-        order.total_amount = subtotal
-        order_dao.update_order_total(order_id, subtotal)
+    # Display inventory value
+    print(f"Total Inventory Value: ${inventory[101].GetInventoryValue() + inventory[102].GetInventoryValue()}")
 
-        product_dao.decrease_stock(product.product_id, quantity)
+except (InvalidDataException, InsufficientStockException, IncompleteOrderException, PaymentFailedException) as e:
+    print(f"Error: {e}")
 
-        print(f"Order placed with ID: {order_id} for ${subtotal}")
+# Search product
+def search_product_by_name(products, name):
+    matches = [p for p in products if name.lower() in p.product_name.lower()]
+    return matches
 
-    except (InvalidDataException, InsufficientStockException, IncompleteOrderException) as e:
-        print("Order Error:", e)
+print("\n--- Search Results for 'smart' ---")
+for product in search_product_by_name(product_list, "smart"):
+    product.GetProductDetails()
 
-    print("\n[Order Status Check]")
-    status = order_dao.get_order_status(order_id)
-    print(f"Order {order_id} Status: {status[0] if status else 'Not found'}")
+# Low stock warning
+print("\n--- Low Stock Products ---")
+for inv in inventory.values():
+    if inv.quantity_in_stock < 10:
+        print(f"Low stock: {inv.product.product_name} (Qty: {inv.quantity_in_stock})")
 
-    db_connector.close_connection()
-    print("\n=== TechShop Session Completed ===")
-
-if __name__ == "__main__":
-    main()
+# List all products
+print("\n--- All Products in Inventory ---")
+for inv in inventory.values():
+    print(f"{inv.product.product_name} - Qty: {inv.quantity_in_stock}")
